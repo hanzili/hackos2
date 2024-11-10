@@ -1,10 +1,8 @@
-# utils.py
-
 import os
 import json
 from openai import OpenAI
 import subprocess
-from config import OPENAI_API_KEY, MODEL, MAX_TOKENS, TEMPERATURE, NUM_SOLUTIONS, ZERO_SHOT_PROMPT, REFINEMENT_PROMPT
+from config import OPENAI_API_KEY, MODEL, MAX_TOKENS, TEMPERATURE, ZERO_SHOT_PROMPT, REFINEMENT_PROMPT
 
 client = OpenAI(api_key=OPENAI_API_KEY)
 
@@ -44,28 +42,49 @@ Output:
     # Join all examples with newlines
     all_examples = "\n".join(training_examples)
     
-    # Format the complete prompt
-    return ZERO_SHOT_PROMPT.format(
-        training_examples=all_examples,
-        input_grid=grid_to_ascii(test_input)
-    )
+    if test_input:
+        # Format the complete prompt with test input
+        return ZERO_SHOT_PROMPT.format(
+            training_examples=all_examples,
+            input_grid=grid_to_ascii(test_input)
+        )
+    else:
+        # Use prompt without test input for initial code generation
+        return ZERO_SHOT_PROMPT.format(
+            training_examples=all_examples,
+            input_grid=""
+        )
 
-def format_refinement_prompt(code, input_grid, output_grid, error_info=None):
+def format_refinement_prompt(code, train_pairs, original_reasoning, error_info=None):
     if error_info:
-        error_info_str = f"\nError Info: {error_info}"
+        error_info_str = f"\nError Information:\n{error_info}"
     else:
         error_info_str = ""
+    
+    # Format training examples
+    training_examples = []
+    for i, (input_grid, output_grid) in enumerate(train_pairs, 1):
+        example = f"""Input Grid {i}:
+{grid_to_ascii(input_grid)}
+
+Expected Output Grid {i}:
+{grid_to_ascii(output_grid)}
+"""
+        training_examples.append(example)
+    
+    training_data_str = "\n".join(training_examples)
+    
     return REFINEMENT_PROMPT.format(
+        original_reasoning=original_reasoning,
         code=code,
-        input_grid=grid_to_ascii(input_grid),
-        output_grid=grid_to_ascii(output_grid),
+        training_data=training_data_str,
         error_info=error_info_str
     )
 
 def generate_code(prompt):
-    """Generate code using the latest OpenAI API and parse the JSON response."""
+    """Generate code using the OpenAI API and parse the JSON response."""
     response = client.chat.completions.create(
-        model='gpt-3.5-turbo',
+        model='gpt-4',
         messages=[
             {"role": "system", "content": prompt},
         ]
@@ -86,6 +105,18 @@ def generate_code(prompt):
     except json.JSONDecodeError:
         raise ValueError("Failed to parse GPT response as JSON")
 
+# Test generated code on all training pairs
+def test_code_on_all_training_pairs(code, train_pairs):
+    """Test the generated code on all training input-output pairs."""
+    error_messages = []
+    for idx, (input_grid, expected_output) in enumerate(train_pairs, 1):
+        success, error_message = test_code(code, input_grid, expected_output)
+        if not success:
+            error_messages.append(f"Example {idx} failed:\n{error_message}")
+    if error_messages:
+        return False, error_messages
+    return True, None
+
 # Test generated code
 def test_code(code, input_grid, expected_output):
     """Test the generated code and return (success, error_message)."""
@@ -101,7 +132,6 @@ except Exception as e:
     print(f"Error: {{str(e)}}")
 """
     
-    print(code_to_run)
     try:
         process = subprocess.run(
             ["python3", "-c", code_to_run],
@@ -125,23 +155,32 @@ except Exception as e:
         return False, f"Execution Error: {str(e)}"
 
 # Refine solutions
-def refine_code(code, input_grid, output_grid):
-    """Refine a single solution, including error information in refinement prompt."""
-    success, error_message = test_code(code, input_grid, output_grid)
-    if success:
-        return code
-
-    # If incorrect, refine using GPT-4 with error information
+def refine_code(code, train_pairs, original_reasoning):
+    """Refine the solution using all training input-output pairs."""
+    error_messages = []
+    for idx, (input_grid, expected_output) in enumerate(train_pairs, 1):
+        success, error_message = test_code(code, input_grid, expected_output)
+        if not success:
+            error_messages.append(f"Example {idx} failed:\n{error_message}")
+    
+    if not error_messages:
+        # Code already correct on all training examples
+        return code, None
+    
+    error_info = "\n".join(error_messages)
+    
+    # Generate refinement prompt
     prompt = format_refinement_prompt(
         code=code,
-        input_grid=input_grid,
-        output_grid=output_grid,
-        error_info=error_message
+        train_pairs=train_pairs,
+        original_reasoning=original_reasoning,
+        error_info=error_info
     )
     
     refined_solution = generate_code(prompt)
-    success, _ = test_code(refined_solution['function'], input_grid, output_grid)
+    # Test refined code on all training pairs
+    success, _ = test_code_on_all_training_pairs(refined_solution['function'], train_pairs)
     if success:
-        return refined_solution['function']
+        return refined_solution['function'], refined_solution['reasoning']
     
-    return None
+    return None, None
