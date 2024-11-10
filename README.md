@@ -1,3 +1,28 @@
+## HackOS2
+
+## My Approach
+
+This solution uses GPT-4o-mini to solve ARC-AGI tasks, inspired by the approach outlined in [this LessWrong post](https://www.lesswrong.com/posts/Rdwui3wHxCeKb7feK/getting-50-sota-on-arc-agi-with-gpt-4o). The implementation focuses on:
+
+**Zero-Shot Learning**: 
+   - Uses a carefully crafted prompt template that presents training examples in a clear ASCII format
+   - Asks GPT to analyze patterns and generate both reasoning and implementation code
+   - No pre-training or fine-tuning required
+
+**Iterative Refinement**:
+   - Tests generated solutions against all training examples
+   - When errors are found, provides detailed feedback to GPT including:
+     - Original reasoning
+     - Failed test cases
+     - Expected vs actual outputs
+   - Allows GPT to refine both its reasoning and implementation
+
+This approach balances the need for accurate pattern recognition with robust implementation and testing, while maintaining the ability to scale across many tasks efficiently.
+
+
+
+--
+
 # Abstraction and Reasoning Corpus for Artificial General Intelligence (ARC-AGI)
 
 This repository contains the ARC-AGI task data, as well as a browser-based interface for humans to try their hand at solving the tasks manually.

@@ -1,5 +1,5 @@
-# OpenAI Configuration
-OPENAI_API_KEY = "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"
+# OpenAI Configuration 
+OPENAI_API_KEY = ""
 MODEL = "gpt-4o-mini"
 MAX_TOKENS = 300
 TEMPERATURE = 0.5
